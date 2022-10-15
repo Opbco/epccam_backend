@@ -1,5 +1,5 @@
 env
+migrations
 .env
 .vscode
-migrations
 required.txt

@@ -1,4 +1,4 @@
-import statistics
+from datetime import datetime, timedelta
 from time import timezone
 from sqlalchemy import Column, String, Integer, Boolean, Text, func
 from flask_sqlalchemy import SQLAlchemy
@@ -54,7 +54,7 @@ class User(db.Model):
         user = User.get_by_email(email)
         if user is None or not check_password_hash(user.password, password):
             return
-        return user.short_repr()
+        return {'exp': datetime.utcnow() + timedelta(minutes=30), 'userid': user.id, 'username': user.user_name, 'email': user.email, 'role_name': user.role.role_name, 'permissions': user.role.permissions}
 
     def short_repr(self):
         return {'userid': self.id, 'username': self.user_name, 'email': self.email, 'role_name': self.role.role_name, 'permissions': self.role.permissions}
@@ -103,6 +103,9 @@ class Region(db.Model):
     region_name = Column(String, unique=True, nullable=False)
     departements = db.relationship('Departement', backref='region', lazy=True)
 
+    def json(self):
+        return {'id': self.id, 'name': self.region_name}
+
     def insert(self):
         db.session.add(self)
         db.session.commit()
@@ -126,6 +129,9 @@ class Departement(db.Model):
     arrondissements = db.relationship(
         'Arrondissement', backref='departement', lazy=True)
 
+    def json(self):
+        return {'id': self.id, 'name': self.departement_name, 'region': self.region.json()}
+
     def insert(self):
         db.session.add(self)
         db.session.commit()
@@ -146,9 +152,12 @@ class Arrondissement(db.Model):
     id = Column(Integer, primary_key=True)
     departement_id = Column(Integer, db.ForeignKey(
         'departements.id'), nullable=False)
-    arrondissement_name = Column(String, unique=True, nullable=False)
+    arrondissement_name = Column(String, nullable=False)
     structures = db.relationship(
         'Structure', backref='arrondissement', lazy=True)
+
+    def json(self):
+        return {'id': self.id, 'name': self.arrondissement_name, 'departement': self.departement.json()}
 
     def insert(self):
         db.session.add(self)
@@ -160,6 +169,11 @@ class Arrondissement(db.Model):
 
     def update(self):
         db.session.commit()
+
+    @classmethod
+    def getByID(cls, _id):
+        find = cls.query.filter_by(id=_id).one_or_none()
+        return find
 
     def __repr__(self):
         return f'<Arrondissement ID: {self.id} Name: {self.arrondissement_name} >'
@@ -173,6 +187,9 @@ class Fonction(db.Model):
         "TypeStructure_fonction", back_populates="fonction")
     membres = db.relationship("StructureMembre", backref="fonction")
 
+    def json(self):
+        return {'id': self.id, 'name': self.fonction_name}
+
     def insert(self):
         db.session.add(self)
         db.session.commit()
@@ -183,6 +200,11 @@ class Fonction(db.Model):
 
     def update(self):
         db.session.commit()
+
+    @classmethod
+    def getByID(cls, _id):
+        find = cls.query.filter_by(id=_id).one_or_none()
+        return find
 
     def __repr__(self):
         return f'<Fonction ID: {self.id} Name: {self.fonction_name} >'
@@ -191,15 +213,33 @@ class Fonction(db.Model):
 class TypeStructure(db.Model):
     __tablename__ = 'typestructures'
     id = Column(Integer, primary_key=True)
-    type_sturcture_name = Column(String, unique=True, nullable=False)
+    type_structure_name = Column(String, unique=True, nullable=False)
     parent_id = Column(Integer, db.ForeignKey(
-        'typestructures.id'), index=True)
+        'typestructures.id', onupdate="CASCADE", ondelete="CASCADE"), index=True)
     sub_typeStructure = db.relationship(
         "TypeStructure", backref=db.backref("parent", remote_side=[id]))
     fonctions = db.relationship(
         "TypeStructure_fonction", back_populates="typestructure")
     structures = db.relationship(
         'Structure', backref='typestructure', lazy=True)
+
+    def json(self):
+        if not self.parent_id:
+            return {'id': self.id, 'name': self.type_structure_name, 'parent': None}
+        return {'id': self.id, 'name': self.type_structure_name, 'parent': self.parent.json()}
+
+    def withFonctions(self):
+        fonctionsJson = []
+        for fonction in self.fonctions:
+            fonctionsJson.append(fonction.jsonForTypeStructure())
+        if not self.parent_id:
+            return {'id': self.id, 'name': self.type_structure_name, 'parent': None, 'fonctions': fonctionsJson}
+        return {'id': self.id, 'name': self.type_structure_name, 'parent': self.parent.json(), 'fonctions': fonctionsJson}
+
+    @classmethod
+    def getByID(cls, _id):
+        find = cls.query.filter_by(id=_id).one_or_none()
+        return find
 
     def insert(self):
         db.session.add(self)
@@ -213,7 +253,7 @@ class TypeStructure(db.Model):
         db.session.commit()
 
     def __repr__(self):
-        return f'<TypeStructure ID: {self.id} Name: {self.type_sturcture_name} >'
+        return f'<TypeStructure ID: {self.id} Name: {self.type_structure_name} >'
 
 
 class TypeStructure_fonction(db.Model):
@@ -226,6 +266,26 @@ class TypeStructure_fonction(db.Model):
     typestructure = db.relationship(
         "TypeStructure", back_populates="fonctions")
     fonction = db.relationship("Fonction", back_populates="typestructures")
+
+    def json(self):
+        return {'typestructure': self.typestructure.json(), 'fonction': self.fonction.json(), 'nombre': self.nombre_position}
+
+    def jsonForTypeStructure(self):
+        return {'fonction': self.fonction.json(), 'nombre': self.nombre_position}
+
+    def jsonForTypeFonction(self):
+        return {'typestructure': self.typestructure.json(), 'nombre': self.nombre_position}
+
+    def insert(self):
+        db.session.add(self)
+        db.session.commit()
+
+    def delete(self):
+        db.session.delete(self)
+        db.session.commit()
+
+    def update(self):
+        db.session.commit()
 
 
 class Structure(db.Model):
@@ -244,13 +304,17 @@ class Structure(db.Model):
         'arrondissements.id'), nullable=False)
     statistiques = db.relationship(
         'Statistique', backref='structure', lazy=True)
-    consacrete_membre = db.relationship(
+    consacrete_membres = db.relationship(
         'Membre', backref='paroisse_consacrete', lazy=True)
     membres = db.relationship("StructureMembre", back_populates="structure")
     medias = db.relationship("Media", backref='structure', lazy=True)
     actualites = db.relationship("Actualite", backref='structure', lazy=True)
     programmations = db.relationship(
         "Programmation", backref='structure', lazy=True)
+    parent_id = Column(Integer, db.ForeignKey(
+        'structures.id', onupdate="CASCADE", ondelete="CASCADE"), index=True)
+    sub_structures = db.relationship(
+        "Structure", backref=db.backref("parent", remote_side=[id]))
 
     def insert(self):
         db.session.add(self)
@@ -262,6 +326,41 @@ class Structure(db.Model):
 
     def update(self):
         db.session.commit()
+
+    def shortJson(self):
+        if self.parent_id:
+            return {'id': self.id, 'name': self.sturcture_name, 'adresse': self.structure_adresse, 'contacts': self.structure_contacts, 'parent': self.parent.json()}
+        return {'id': self.id, 'name': self.sturcture_name, 'adresse': self.structure_adresse, 'contacts': self.structure_contacts}
+
+    def jsonWithParent(self):
+        if self.parent_id:
+            return {'parent': self.parent.shortJson(), 'id': self.id, 'name': self.sturcture_name, 'adresse': self.structure_adresse, 'contacts': self.structure_contacts, 'nombre_communicant': self.nombre_communicant, 'nombre_baptise': self.nombre_baptise, 'type': self.typestructure.json(), 'arrondissement': self.arrondissement.json()}
+        return {'id': self.id, 'name': self.sturcture_name, 'adresse': self.structure_adresse, 'contacts': self.structure_contacts, 'nombre_communicant': self.nombre_communicant, 'nombre_baptise': self.nombre_baptise, 'type': self.typestructure.json(), 'arrondissement': self.arrondissement.json()}
+
+    def json(self):
+        return {'id': self.id, 'name': self.sturcture_name, 'adresse': self.structure_adresse, 'contacts': self.structure_contacts, 'nombre_communicant': self.nombre_communicant, 'nombre_baptise': self.nombre_baptise, 'type': self.typestructure.json(), 'arrondissement': self.arrondissement.json(), 'medias': self.mediasJson()}
+
+    def subStructureJson(self):
+        data = []
+        for structure in self.sub_structures:
+            data.append(structure.json())
+        return data
+
+    def mediasJson(self):
+        data = []
+        for media in self.medias:
+            data.append(media.json())
+        return data
+
+    @classmethod
+    def getByID(cls, structure_id):
+        structure = cls.query.filter_by(id=structure_id).one_or_none()
+        return structure
+
+    @classmethod
+    def getByName(cls, name):
+        structure = cls.query.filter_by(sturcture_name=name).one_or_none()
+        return structure
 
     def __repr__(self):
         return f'<TypeStructure ID: {self.id} Name: {self.sturcture_name} >'
@@ -289,11 +388,11 @@ class Membre(db.Model):
     date_updated = Column(db.DateTime(timezone=True),
                           onupdate=func.now())
     typestructure_id = Column(Integer, db.ForeignKey(
-        'typestructures.id'), nullable=False)
+        'typestructures.id'), nullable=True)
     arrondissement_id = Column(Integer, db.ForeignKey(
         'arrondissements.id'), nullable=False)
     paroisse_consecration_id = Column(
-        Integer, db.ForeignKey('structures.id'), nullable=False)
+        Integer, db.ForeignKey('structures.id'), nullable=True)
     media_id = Column(Integer, db.ForeignKey('medias.id'), nullable=True)
     user_id = Column(Integer, db.ForeignKey('users.id'), nullable=False)
     structures = db.relationship("StructureMembre", back_populates="membre")
@@ -308,6 +407,44 @@ class Membre(db.Model):
 
     def update(self):
         db.session.commit()
+
+    @classmethod
+    def getByID(cls, membre_id):
+        membre = cls.query.filter_by(id=membre_id).one_or_none()
+        return membre
+
+    @classmethod
+    def getByUserID(cls, user_id):
+        membre = cls.query.filter_by(user_id=user_id).one_or_none()
+        return membre
+
+    def myStructures(self):
+        structures = db.session.query(StructureMembre).join(
+            Membre, StructureMembre.membre_id == Membre.id).order_by(db.desc(StructureMembre.date_affectation), StructureMembre.actuel).all()
+        data = [structuremembre.structure.json()
+                for structuremembre in structures]
+        return data
+
+    def json(self):
+        return {
+            'id': self.id,
+            'fullname': self.membre_fullname,
+            'genre': self.membre_genre,
+            'dob': self.membre_dob,
+            'pob': self.membre_pob,
+            'mother': self.membre_mother,
+            'father': self.membre_father,
+            'statusm': self.status_matrimonial,
+            'conjoint': self.membre_conjoint,
+            'nbenfant': self.membre_nbenfant,
+            'contacts': self.membre_contacts,
+            'adresse': self.membre_adresse,
+            'arrondissement': self.arrondissement.json(),
+            'date_consecration': self.date_consecration,
+            'consecratoire': self.paroisse_consacrete.json(),
+            'avatar': self.avatar.json(),
+            'structures': self.myStructures()
+        }
 
     def __repr__(self):
         return f'<Membre ID: {self.id} Name: {self.membre_fullname} >'
@@ -328,6 +465,43 @@ class Media(db.Model):
     structure_id = Column(Integer, db.ForeignKey(
         'structures.id'), nullable=True)
 
+    def json(self):
+        return {'id': self.id, 'file_name': self.file_name, 'file_url': self.path_name, 'type': self.type_media, 'created_on': self.date_created}
+
+    def insert(self):
+        db.session.add(self)
+        db.session.commit()
+
+    def delete(self):
+        db.session.delete(self)
+        db.session.commit()
+
+    def update(self):
+        db.session.commit()
+
+    @classmethod
+    def getByID(cls, media_id):
+        media = cls.query.filter_by(id=media_id).one_or_none()
+        return media
+
+    def __repr__(self):
+        return f'<Media ID: {self.id} Name: {self.file_name} >'
+
+
+class StructureMembre(db.Model):
+    __tablename__ = 'structuremembres'
+    structure_id = Column(Integer, db.ForeignKey(
+        'structures.id', ondelete="CASCADE"), primary_key=True)
+    membre_id = Column(Integer, db.ForeignKey(
+        'membres.id', ondelete="CASCADE"), primary_key=True)
+    actuel = Column(Boolean, nullable=False, default=True)
+    date_affectation = Column(db.DateTime(timezone=True), nullable=False)
+    fonction_id = Column(Integer, db.ForeignKey(
+        'fonctions.id'), nullable=False)
+    structure = db.relationship(
+        "Structure", back_populates="membres")
+    membre = db.relationship("Membre", back_populates="structures")
+
     def insert(self):
         db.session.add(self)
         db.session.commit()
@@ -340,22 +514,7 @@ class Media(db.Model):
         db.session.commit()
 
     def __repr__(self):
-        return f'<Media ID: {self.id} Name: {self.file_name} >'
-
-
-class StructureMembre(db.Model):
-    __tablename__ = 'structuremembres'
-    structure_id = Column(Integer, db.ForeignKey(
-        'structures.id'), primary_key=True)
-    membre_id = Column(Integer, db.ForeignKey(
-        'membres.id'), primary_key=True)
-    actuel = Column(Boolean, nullable=False, default=True)
-    date_affectation = Column(db.DateTime(timezone=True), nullable=False)
-    fonction_id = Column(Integer, db.ForeignKey(
-        'fonctions.id'), nullable=False)
-    structure = db.relationship(
-        "Structure", back_populates="membres")
-    membre = db.relationship("Membre", back_populates="structures")
+        return f'<StructureMembre ID: {self.id} structure: {self.structure_id} membre: {self.membre_id} fonction: {self.fonction_id} >'
 
 
 class Programmation(db.Model):

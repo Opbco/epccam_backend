@@ -1,5 +1,6 @@
 """Validator Module"""
 import re
+from dateutil import parser
 
 
 def validate(data, regex):
@@ -11,6 +12,16 @@ def validate_password(password: str):
     """Password Validator"""
     reg = r"\b^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!#%*?&]{8,20}$\b"
     return validate(password, reg)
+
+
+def validate_dateformat(date_str: str):
+    """Date format Validator"""
+    res = True
+    try:
+        res = bool(parser.parse(date_str))
+    except ValueError:
+        res = False
+    return res
 
 
 def validate_email(email: str):
@@ -46,6 +57,55 @@ def validate_user(**args):
     if not 2 <= len(args.get('user_name')) <= 30:
         return {
             'username': 'Username must be between 2 and 30 words'
+        }
+    return True
+
+
+def validate_membre(**args):
+    """Membre Validator"""
+    if not args.get('userid') or not args.get('fullname') or not args.get('genre') or not args.get('dob') or not args.get('pob') or not args.get('genre') or not args.get('dob') or not args.get('pob') or not args.get('mother') or not args.get('father') or not args.get('statusm') or not args.get('conjoint') or not args.get('nbenfant') or not args.get('contacts') or not args.get('adresse') or not args.get('arrondissement'):
+        return {
+            'userid': 'the account link to this member is required',
+            'fullname': 'fullname is required',
+            'genre': 'genre is required',
+            'dob': 'dob (date of birth) is required',
+            'pob': 'pob (place of birth) is required',
+            'mother': 'mother is required',
+            'father': 'father is required',
+            'statusm': 'statusm (marital status) is required',
+            'conjoint': 'conjoint is required',
+            'nbenfant': 'nbenfant is required',
+            'contacts': 'contacts is required',
+            'adresse': 'adresse (adresse of residence) is required',
+            'arrondissement': 'arrondissement is required',
+        }
+
+    if not validate_dateformat(str(args.get('dob'))):
+        return {
+            'dob': 'dob must be a valid date/datetime',
+        }
+
+    if not isinstance(args.get('arrondissement'), int) or \
+            not isinstance(args.get('userid'), int):
+        return {
+            'arrondissement': 'Email must be an integer',
+            'userid': 'Password must be an integer',
+        }
+    if not any(args.values()):
+        return {
+            'userid': 'the account link to this member is required',
+            'fullname': 'fullname is required',
+            'genre': 'genre is required',
+            'dob': 'dob (date of birth) is required',
+            'pob': 'pob (place of birth) is required',
+            'mother': 'mother is required',
+            'father': 'father is required',
+            'statusm': 'statusm (marital status) is required',
+            'conjoint': 'conjoint is required',
+            'nbenfant': 'nbenfant is required',
+            'contacts': 'contacts is required',
+            'adresse': 'adresse (adresse of residence) is required',
+            'arrondissement': 'arrondissement is required',
         }
     return True
 

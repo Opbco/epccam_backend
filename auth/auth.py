@@ -1,4 +1,4 @@
-import json
+from datetime import datetime, timedelta
 import os
 from flask import request
 from functools import wraps
@@ -112,6 +112,11 @@ def verify_decode_jwt(token):
     try:
         # decoding the payload to fetch the stored details
         data = jwt.decode(token, JWT_SECRET, algorithms=ALGORITHMS)
+        """ if datetime.utcnow() > datetime.fromtimestamp(data['exp']):
+            raise AuthError({
+                'code': 'Token expired',
+                'description': 'The token is expired please login again.'
+            }, 401) """
         return data
     except:
         raise AuthError({

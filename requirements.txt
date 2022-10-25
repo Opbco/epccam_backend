@@ -16,9 +16,11 @@ MarkupSafe==2.1.1
 psycopg2-binary==2.9.4
 pycodestyle==2.9.1
 PyJWT==2.5.0
+Pillow==9.2.0
 python-dotenv==0.21.0
 pytz==2022.4
 six==1.16.0
 SQLAlchemy==1.4.41
 toml==0.10.2
 Werkzeug==2.2.2
+gunicorn==20.0.4
